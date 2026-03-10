@@ -1,4 +1,12 @@
 /* eslint-disable */
+/**
+ * PELINDUNG KESELAMATAN (SAFETY GUARD)
+ * Kod ini memastikan objek 'process' wujud dalam persekitaran pelayar untuk mengelakkan ralat ReferenceError.
+ */
+if (typeof window !== 'undefined' && typeof process === 'undefined') {
+  window.process = { env: {} };
+}
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -38,37 +46,48 @@ import {
 } from 'lucide-react';
 
 /**
- * PENGURUSAN KONFIGURASI (RUNTIME SAFE)
- * Menggunakan akses literal untuk mengelakkan ralat 'process is not defined'
+ * PENGURUSAN KONFIGURASI (ULTRA-SAFE)
+ * CRA memerlukan akses literal process.env.REACT_APP_... untuk berfungsi.
+ * Kami juga menambah fallback untuk window.__firebase_config bagi kegunaan simulasi.
  */
 const getFirebaseConfig = () => {
-  // 1. Semak jika dijalankan dalam persekitaran simulasi (Canvas/Internal)
+  // 1. Semak pembolehubah simulasi terlebih dahulu (Canvas/Sandbox)
   if (typeof window !== 'undefined' && window.__firebase_config) {
     try {
-      return JSON.parse(window.__firebase_config);
+      return typeof window.__firebase_config === 'string' 
+        ? JSON.parse(window.__firebase_config) 
+        : window.__firebase_config;
     } catch (e) {
-      console.error("Gagal parse __firebase_config", e);
+      console.error("Ralat memproses konfigurasi Firebase", e);
     }
   }
 
-  // 2. Akses Environment Variables secara literal (PENTING untuk Create React App)
-  // Nota: Kita tidak menggunakan process.env[key] kerana ia akan menyebabkan ReferenceError di pelayar.
+  // 2. Akses statik untuk Create React App (CRA) / Vercel
+  // PENTING: Semak kewujudan 'process' secara eksplisit untuk mengelakkan ralat ReferenceError
+  const env = (typeof process !== 'undefined' && process.env) ? process.env : {};
+
   return {
-    apiKey: (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || "") : "",
-    authDomain: (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN || "") : "",
-    projectId: (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "") : "",
-    storageBucket: (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || "") : "",
-    messagingSenderId: (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "") : "",
-    appId: (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID || "") : ""
+    apiKey: env.REACT_APP_FIREBASE_API_KEY || "",
+    authDomain: env.REACT_APP_FIREBASE_AUTH_DOMAIN || "",
+    projectId: env.REACT_APP_FIREBASE_PROJECT_ID || "",
+    storageBucket: env.REACT_APP_FIREBASE_STORAGE_BUCKET || "",
+    messagingSenderId: env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "",
+    appId: env.REACT_APP_FIREBASE_APP_ID || ""
   };
 };
 
-// Konfigurasi Asas
 const firebaseConfig = getFirebaseConfig();
-const GOOGLE_SHEET_WEBHOOK_URL = (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_SHEET_WEBHOOK_URL || process.env.VITE_SHEET_WEBHOOK_URL || "") : "";
+
+// Akses selamat untuk webhook dan ID aplikasi
+const GOOGLE_SHEET_WEBHOOK_URL = (typeof process !== 'undefined' && process.env) 
+  ? (process.env.REACT_APP_SHEET_WEBHOOK_URL || "") 
+  : "";
+
 const appId = (typeof window !== 'undefined' && window.__app_id) 
   ? window.__app_id 
-  : ((typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_APP_ID || process.env.VITE_APP_ID || 'pharmacy-tracker-v2') : 'pharmacy-tracker-v2');
+  : ((typeof process !== 'undefined' && process.env && process.env.REACT_APP_APP_ID) 
+      ? process.env.REACT_APP_APP_ID 
+      : 'pharmacy-tracker-v2');
 
 // Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
@@ -111,7 +130,7 @@ const syncToGoogleSheets = async (payload) => {
       body: JSON.stringify(payload)
     });
   } catch (err) {
-    console.warn("Audit log failed (Sheet sync):", err);
+    console.warn("Audit log gagal (Penyelarasan Sheet):", err);
   }
 };
 
@@ -153,7 +172,7 @@ export default function App() {
           await signInAnonymously(auth);
         }
       } catch (err) {
-        console.error("Auth failed", err);
+        console.error("Auth gagal", err);
       }
     };
     initAuth();
@@ -170,7 +189,7 @@ export default function App() {
       setIndents(data);
       setLoading(false);
     }, (err) => {
-      console.error("Indents sync error:", err);
+      console.error("Ralat penyelarasan Indents:", err);
       setLoading(false);
     });
 
@@ -293,6 +312,7 @@ export default function App() {
     if (passwordInput === ADMIN_PASSWORD) {
       setActiveTab('settings');
       setShowPasswordModal(false);
+      setPasswordError(false);
     } else {
       setPasswordError(true);
     }
@@ -317,7 +337,7 @@ export default function App() {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
         <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-        <p className="font-black text-slate-400 uppercase tracking-widest text-xs italic">Menyediakan Aplikasi...</p>
+        <p className="font-black text-slate-400 uppercase tracking-widest text-xs italic">Menghubungkan ke Server...</p>
       </div>
     );
   }
@@ -397,9 +417,9 @@ export default function App() {
                     <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Staf: {item.staff}</p>
                   </div>
                   <div className="text-right flex flex-col gap-1 text-[9px] font-black uppercase text-slate-400 tracking-tighter">
-                    <div>IN: {formatDateTime(item.created_at)}</div>
-                    {item.done_at && <div className="text-green-600 font-black">READY: {formatDateTime(item.done_at)}</div>}
-                    {item.collected_at && <div>OUT: {formatDateTime(item.collected_at)}</div>}
+                    <div>MASUK: {formatDateTime(item.created_at)}</div>
+                    {item.done_at && <div className="text-green-600 font-black">SIAP: {formatDateTime(item.done_at)}</div>}
+                    {item.collected_at && <div>AMBIL: {formatDateTime(item.collected_at)}</div>}
                   </div>
                 </div>
                 {item.collected_by && <div className="mt-2 text-[10px] font-black text-slate-600 uppercase italic">Diambil Oleh: {item.collected_by}</div>}
