@@ -1,12 +1,4 @@
 /* eslint-disable */
-/**
- * SAFETY GUARD: Menangani ralat 'process is not defined'
- * Kod ini memastikan objek process wujud dalam persekitaran pelayar (browser).
- */
-if (typeof window !== 'undefined' && typeof process === 'undefined') {
-  window.process = { env: {} };
-}
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -46,48 +38,44 @@ import {
 } from 'lucide-react';
 
 /**
- * PENGURUSAN PEMBOLEHUBAH PERSEKITARAN (ENV)
- * Menggunakan semakan selamat untuk mengakses process.env
+ * PENGURUSAN KONFIGURASI
+ * Menggunakan semakan keselamatan untuk process.env bagi mengelakkan ReferenceError.
  */
 const getSafeEnv = (key) => {
   try {
-    // Pastikan process dan process.env wujud sebelum akses
     if (typeof process !== 'undefined' && process.env) {
-      return process.env[`REACT_APP_${key}`] || process.env[`VITE_${key}`] || "";
+      return process.env[key] || "";
     }
-  } catch (e) {
-    console.warn(`Gagal mengakses env key: ${key}`, e);
-  }
+  } catch (e) {}
   return "";
 };
 
-/**
- * AKSES GLOBAL VARIABLES (Untuk kegunaan simulasi/sandbox)
- */
-const getGlobal = (key) => {
-  if (typeof window !== 'undefined' && window[key]) {
-    return window[key];
+const getFirebaseConfig = () => {
+  // Semakan persekitaran simulasi (Canvas/Dalaman)
+  if (typeof window !== 'undefined' && window.__firebase_config) {
+    try {
+      return JSON.parse(window.__firebase_config);
+    } catch (e) {
+      console.error("Gagal parse __firebase_config", e);
+    }
   }
-  return undefined;
+
+  // Guna Environment Variables dari Vercel/Local dengan semakan selamat
+  return {
+    apiKey: getSafeEnv("REACT_APP_FIREBASE_API_KEY") || getSafeEnv("VITE_FIREBASE_API_KEY") || "",
+    authDomain: getSafeEnv("REACT_APP_FIREBASE_AUTH_DOMAIN") || getSafeEnv("VITE_FIREBASE_AUTH_DOMAIN") || "",
+    projectId: getSafeEnv("REACT_APP_FIREBASE_PROJECT_ID") || getSafeEnv("VITE_FIREBASE_PROJECT_ID") || "",
+    storageBucket: getSafeEnv("REACT_APP_FIREBASE_STORAGE_BUCKET") || getSafeEnv("VITE_FIREBASE_STORAGE_BUCKET") || "",
+    messagingSenderId: getSafeEnv("REACT_APP_FIREBASE_MESSAGING_SENDER_ID") || getSafeEnv("VITE_FIREBASE_MESSAGING_SENDER_ID") || "",
+    appId: getSafeEnv("REACT_APP_FIREBASE_APP_ID") || getSafeEnv("VITE_FIREBASE_APP_ID") || ""
+  };
 };
 
-// Konfigurasi Firebase
-const firebaseConfig = (function() {
-  const raw = getGlobal('__firebase_config');
-  if (raw) return JSON.parse(raw);
-  
-  return {
-    apiKey: getSafeEnv("FIREBASE_API_KEY"),
-    authDomain: getSafeEnv("FIREBASE_AUTH_DOMAIN"),
-    projectId: getSafeEnv("FIREBASE_PROJECT_ID"),
-    storageBucket: getSafeEnv("FIREBASE_STORAGE_BUCKET"),
-    messagingSenderId: getSafeEnv("FIREBASE_MESSAGING_SENDER_ID"),
-    appId: getSafeEnv("FIREBASE_APP_ID")
-  };
-})();
-
-const GOOGLE_SHEET_WEBHOOK_URL = getSafeEnv("SHEET_WEBHOOK_URL");
-const appId = getGlobal('__app_id') || getSafeEnv("APP_ID") || 'pharmacy-tracker-v2';
+const firebaseConfig = getFirebaseConfig();
+const GOOGLE_SHEET_WEBHOOK_URL = getSafeEnv("REACT_APP_SHEET_WEBHOOK_URL") || getSafeEnv("VITE_SHEET_WEBHOOK_URL") || "";
+const appId = (typeof window !== 'undefined' && window.__app_id) 
+  ? window.__app_id 
+  : (getSafeEnv("REACT_APP_APP_ID") || getSafeEnv("VITE_APP_ID") || 'pharmacy-tracker-v2');
 
 // Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
@@ -116,7 +104,7 @@ const formatDateTime = (isoString) => {
 const getUnitColor = (unitName) => {
   const colors = ['text-blue-600', 'text-emerald-600', 'text-purple-600', 'text-pink-600', 'text-orange-600', 'text-cyan-600', 'text-indigo-600', 'text-rose-600'];
   let hash = 0;
-  for (let i = 0; i < unitName?.length; i++) hash = unitName.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < (unitName?.length || 0); i++) hash = unitName.charCodeAt(i) + ((hash << 5) - hash);
   return colors[Math.abs(hash) % colors.length];
 };
 
@@ -130,7 +118,7 @@ const syncToGoogleSheets = async (payload) => {
       body: JSON.stringify(payload)
     });
   } catch (err) {
-    console.warn("Audit log failed:", err);
+    console.warn("Audit log failed (Sheet sync):", err);
   }
 };
 
@@ -162,7 +150,6 @@ export default function App() {
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState(false);
 
-  // Auth Lifecycle
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -181,11 +168,9 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Firestore Listeners
   useEffect(() => {
     if (!user) return;
 
-    // Listener Indents
     const indentsRef = collection(db, 'artifacts', appId, 'public', 'data', 'indents');
     const unsubscribeIndents = onSnapshot(indentsRef, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -196,7 +181,6 @@ export default function App() {
       setLoading(false);
     });
 
-    // Listener Units Settings
     const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'units');
     const unsubscribeSettings = onSnapshot(settingsDocRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -210,7 +194,6 @@ export default function App() {
       }
     });
 
-    // Listener App Name
     const appInfoRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'appInfo');
     const unsubscribeAppInfo = onSnapshot(appInfoRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -341,7 +324,7 @@ export default function App() {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
         <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-        <p className="font-black text-slate-400 uppercase tracking-widest text-xs italic">Menyambung ke Server...</p>
+        <p className="font-black text-slate-400 uppercase tracking-widest text-xs italic">Menyambung ke Awan...</p>
       </div>
     );
   }
@@ -350,7 +333,6 @@ export default function App() {
     <div className="flex justify-center items-center min-h-screen bg-slate-100 font-sans text-slate-800">
       <div className="w-full max-w-md h-[100dvh] bg-white shadow-2xl flex flex-col relative overflow-hidden md:h-[850px] md:rounded-[3rem] md:border-[8px] md:border-slate-800">
         
-        {/* Status indicator */}
         <div className="absolute top-1 right-8 z-50">
           <div className="flex items-center gap-1 bg-white/80 backdrop-blur px-2 py-0.5 rounded-full border border-slate-100 shadow-sm">
             <div className={`w-1.5 h-1.5 rounded-full ${user ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
@@ -358,7 +340,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Header */}
         <div className="p-4 border-b flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
           <div onClick={() => setShowUnitSelector(true)} className="flex items-center gap-3 cursor-pointer">
             <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><Building2 className="w-5 h-5" /></div>
@@ -371,7 +352,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Search */}
         {activeTab === 'tracker' && (
           <div className="px-4 py-3 bg-slate-50 border-b">
             <div className="relative">
@@ -386,7 +366,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Main List */}
         <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50/50 scroll-smooth no-scrollbar">
           {activeTab === 'tracker' && (
             filteredIndents.length > 0 ? filteredIndents.map(item => (
