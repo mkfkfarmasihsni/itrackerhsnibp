@@ -1,4 +1,12 @@
 /* eslint-disable */
+/**
+ * SAFETY GUARD: Menangani ralat 'process is not defined'
+ * Kod ini memastikan objek process wujud dalam persekitaran pelayar (browser).
+ */
+if (typeof window !== 'undefined' && typeof process === 'undefined') {
+  window.process = { env: {} };
+}
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -39,19 +47,22 @@ import {
 
 /**
  * PENGURUSAN PEMBOLEHUBAH PERSEKITARAN (ENV)
- * Fungsi ini memastikan ralat 'process is not defined' tidak berlaku
+ * Menggunakan semakan selamat untuk mengakses process.env
  */
-const getEnv = (key) => {
+const getSafeEnv = (key) => {
   try {
+    // Pastikan process dan process.env wujud sebelum akses
     if (typeof process !== 'undefined' && process.env) {
       return process.env[`REACT_APP_${key}`] || process.env[`VITE_${key}`] || "";
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn(`Gagal mengakses env key: ${key}`, e);
+  }
   return "";
 };
 
 /**
- * AKSES GLOBAL VARIABLES (Bypass Linter)
+ * AKSES GLOBAL VARIABLES (Untuk kegunaan simulasi/sandbox)
  */
 const getGlobal = (key) => {
   if (typeof window !== 'undefined' && window[key]) {
@@ -66,17 +77,17 @@ const firebaseConfig = (function() {
   if (raw) return JSON.parse(raw);
   
   return {
-    apiKey: getEnv("FIREBASE_API_KEY"),
-    authDomain: getEnv("FIREBASE_AUTH_DOMAIN"),
-    projectId: getEnv("FIREBASE_PROJECT_ID"),
-    storageBucket: getEnv("FIREBASE_STORAGE_BUCKET"),
-    messagingSenderId: getEnv("FIREBASE_MESSAGING_SENDER_ID"),
-    appId: getEnv("FIREBASE_APP_ID")
+    apiKey: getSafeEnv("FIREBASE_API_KEY"),
+    authDomain: getSafeEnv("FIREBASE_AUTH_DOMAIN"),
+    projectId: getSafeEnv("FIREBASE_PROJECT_ID"),
+    storageBucket: getSafeEnv("FIREBASE_STORAGE_BUCKET"),
+    messagingSenderId: getSafeEnv("FIREBASE_MESSAGING_SENDER_ID"),
+    appId: getSafeEnv("FIREBASE_APP_ID")
   };
 })();
 
-const GOOGLE_SHEET_WEBHOOK_URL = getEnv("SHEET_WEBHOOK_URL");
-const appId = getGlobal('__app_id') || getEnv("APP_ID") || 'pharmacy-tracker-v2';
+const GOOGLE_SHEET_WEBHOOK_URL = getSafeEnv("SHEET_WEBHOOK_URL");
+const appId = getGlobal('__app_id') || getSafeEnv("APP_ID") || 'pharmacy-tracker-v2';
 
 // Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
@@ -155,7 +166,7 @@ export default function App() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const token = getGlobal('__initial_auth_token');
+        const token = (typeof window !== 'undefined') ? window.__initial_auth_token : null;
         if (token) {
           await signInWithCustomToken(auth, token);
         } else {
