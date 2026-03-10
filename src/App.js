@@ -1,11 +1,12 @@
 /* eslint-disable */
 /**
  * PELINDUNG KESELAMATAN (POLYFILL)
- * Memastikan objek 'process' wujud supaya pelayar tidak 'crash' 
- * jika sistem build gagal menggantikan nilai env.
+ * Memastikan objek 'process' wujud supaya pelayar tidak 'crash'.
+ * Ini adalah langkah kecemasan jika sistem build gagal menggantikan nilai env.
  */
-if (typeof window !== 'undefined' && typeof process === 'undefined') {
-  window.process = { env: {} };
+if (typeof window !== 'undefined') {
+  window.process = window.process || {};
+  window.process.env = window.process.env || {};
 }
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -47,12 +48,13 @@ import {
 } from 'lucide-react';
 
 /**
- * PENGURUSAN KONFIGURASI
- * PENTING: CRA memerlukan akses literal 'process.env.REACT_APP_...' 
+ * PENGURUSAN KONFIGURASI (CRA & VITE COMPATIBLE)
+ * CRA memerlukan akses literal 'process.env.REACT_APP_...' 
  * supaya ia boleh ditukar kepada string semasa proses build.
+ * Kami menambah akses literal VITE_ kerana anda menggunakannya di Vercel.
  */
 const getFirebaseConfig = () => {
-  // 1. Check for simulation variables first (Canvas/Sandbox)
+  // 1. Semak pembolehubah simulasi (Canvas/Internal)
   if (typeof window !== 'undefined' && window.__firebase_config) {
     try {
       return typeof window.__firebase_config === 'string' 
@@ -63,25 +65,25 @@ const getFirebaseConfig = () => {
     }
   }
 
-  // 2. Direct literal access for Create React App (CRA) / Vercel
-  // Jangan simpan process.env ke dalam variable lain, guna terus begini:
+  // 2. Akses terus secara literal. 
+  // PENTING: Jangan gunakan pembolehubah dinamik di sini.
   return {
-    apiKey: (typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_API_KEY : "") || "",
-    authDomain: (typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_AUTH_DOMAIN : "") || "",
-    projectId: (typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_PROJECT_ID : "") || "",
-    storageBucket: (typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_STORAGE_BUCKET : "") || "",
-    messagingSenderId: (typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID : "") || "",
-    appId: (typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_APP_ID : "") || ""
+    apiKey: process.env.REACT_APP_FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || "",
+    authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN || "",
+    projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "",
+    storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || "",
+    messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
+    appId: process.env.REACT_APP_FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID || ""
   };
 };
 
 const firebaseConfig = getFirebaseConfig();
 
 // Akses literal untuk webhook dan App ID
-const GOOGLE_SHEET_WEBHOOK_URL = (typeof process !== 'undefined' ? process.env.REACT_APP_SHEET_WEBHOOK_URL : "") || "";
+const GOOGLE_SHEET_WEBHOOK_URL = process.env.REACT_APP_SHEET_WEBHOOK_URL || process.env.VITE_SHEET_WEBHOOK_URL || "";
 const appId = (typeof window !== 'undefined' && window.__app_id) 
   ? window.__app_id 
-  : ((typeof process !== 'undefined' ? process.env.REACT_APP_APP_ID : "") || 'pharmacy-tracker-v2');
+  : (process.env.REACT_APP_APP_ID || process.env.VITE_APP_ID || 'pharmacy-tracker-v2');
 
 // Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
@@ -306,6 +308,7 @@ export default function App() {
     if (passwordInput === ADMIN_PASSWORD) {
       setActiveTab('settings');
       setShowPasswordModal(false);
+      setPasswordError(false);
     } else {
       setPasswordError(true);
     }
@@ -491,7 +494,7 @@ export default function App() {
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer Navigation */}
         <div className="h-20 bg-white border-t flex justify-around items-center px-6 pb-6 sticky bottom-0 z-10">
           <button onClick={() => setActiveTab('tracker')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'tracker' ? 'text-blue-600 scale-110 font-black' : 'text-slate-300'}`}>
             <LayoutGrid className="w-6 h-6" /><span className="text-[9px] font-black uppercase">STATUS</span>
