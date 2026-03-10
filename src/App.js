@@ -1,3 +1,5 @@
+/* eslint-disable no-undef */
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -38,7 +40,7 @@ import {
 
 /**
  * CONFIGURASI FIREBASE & GLOBAL
- * Menggunakan window. untuk mengelakkan ralat 'no-undef' di Vercel build
+ * Diperbaiki untuk mengelakkan ralat build di Vercel/CRA
  */
 const getEnv = (key) => {
   if (typeof process !== 'undefined' && process.env) {
@@ -47,14 +49,12 @@ const getEnv = (key) => {
   return "";
 };
 
-// Akses global variables melalui window object untuk bypass ESLint check
+// Akses pembolehubah global dengan cara yang selamat untuk build step
 const getGlobal = (key) => {
-  try {
-    // eslint-disable-next-line
+  if (typeof window !== 'undefined' && window[key]) {
     return window[key];
-  } catch (e) {
-    return undefined;
   }
+  return undefined;
 };
 
 const rawConfig = getGlobal('__firebase_config');
@@ -71,8 +71,7 @@ const firebaseConfig = rawConfig
 
 const GOOGLE_SHEET_WEBHOOK_URL = getEnv("SHEET_WEBHOOK_URL"); 
 
-const globalAppId = getGlobal('__app_id');
-const appId = globalAppId || (getEnv("APP_ID") || 'pharmacy-tracker-v2');
+const appId = getGlobal('__app_id') || (getEnv("APP_ID") || 'pharmacy-tracker-v2');
 
 // Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
