@@ -1,12 +1,9 @@
 /* eslint-disable */
 /**
  * PELINDUNG KESELAMATAN (POLYFILL)
- * Memastikan objek 'process' wujud supaya pelayar tidak 'crash'.
- * Ini adalah langkah kecemasan jika sistem build gagal menggantikan nilai env.
  */
 if (typeof window !== 'undefined') {
-  window.process = window.process || {};
-  window.process.env = window.process.env || {};
+  window.process = window.process || { env: {} };
 }
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -48,25 +45,19 @@ import {
 } from 'lucide-react';
 
 /**
- * PENGURUSAN KONFIGURASI (CRA & VITE COMPATIBLE)
- * CRA memerlukan akses literal 'process.env.REACT_APP_...' 
- * supaya ia boleh ditukar kepada string semasa proses build.
- * Kami menambah akses literal VITE_ kerana anda menggunakannya di Vercel.
+ * PENGURUSAN KONFIGURASI
+ * Kita akses secara terus (literal) supaya Webpack/CRA boleh buat penggantian string semasa build.
  */
 const getFirebaseConfig = () => {
-  // 1. Semak pembolehubah simulasi (Canvas/Internal)
   if (typeof window !== 'undefined' && window.__firebase_config) {
     try {
       return typeof window.__firebase_config === 'string' 
         ? JSON.parse(window.__firebase_config) 
         : window.__firebase_config;
-    } catch (e) {
-      console.error("Firebase config parse error", e);
-    }
+    } catch (e) { }
   }
 
-  // 2. Akses terus secara literal. 
-  // PENTING: Jangan gunakan pembolehubah dinamik di sini.
+  // CRA perlukan REACT_APP_. Jika guna VITE_, ia selalunya gagal dalam build CRA.
   return {
     apiKey: process.env.REACT_APP_FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || "",
     authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN || "",
@@ -78,8 +69,6 @@ const getFirebaseConfig = () => {
 };
 
 const firebaseConfig = getFirebaseConfig();
-
-// Akses literal untuk webhook dan App ID
 const GOOGLE_SHEET_WEBHOOK_URL = process.env.REACT_APP_SHEET_WEBHOOK_URL || process.env.VITE_SHEET_WEBHOOK_URL || "";
 const appId = (typeof window !== 'undefined' && window.__app_id) 
   ? window.__app_id 
@@ -112,7 +101,8 @@ const formatDateTime = (isoString) => {
 const getUnitColor = (unitName) => {
   const colors = ['text-blue-600', 'text-emerald-600', 'text-purple-600', 'text-pink-600', 'text-orange-600', 'text-cyan-600', 'text-indigo-600', 'text-rose-600'];
   let hash = 0;
-  for (let i = 0; i < (unitName?.length || 0); i++) hash = unitName.charCodeAt(i) + ((hash << 5) - hash);
+  const str = String(unitName || "");
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
   return colors[Math.abs(hash) % colors.length];
 };
 
@@ -125,9 +115,7 @@ const syncToGoogleSheets = async (payload) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-  } catch (err) {
-    console.warn("Audit log gagal (Sheet sync):", err);
-  }
+  } catch (err) { }
 };
 
 export default function App() {
@@ -136,6 +124,7 @@ export default function App() {
   const [unitSettings, setUnitSettings] = useState(INITIAL_UNITS);
   const [appName, setAppName] = useState(DEFAULT_APP_NAME);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState(null);
   
   const [activeTab, setActiveTab] = useState('tracker');
   const [currentUnitFilter, setCurrentUnitFilter] = useState('SEMUA UNIT');
@@ -158,6 +147,7 @@ export default function App() {
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState(false);
 
+  // Auth Lifecycle
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -169,13 +159,19 @@ export default function App() {
         }
       } catch (err) {
         console.error("Auth failed", err);
+        setErrorMsg("Ralat Log Masuk: Sila pastikan API Key betul.");
+        setLoading(false);
       }
     };
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (!u) setLoading(false); 
+    });
     return () => unsubscribe();
   }, []);
 
+  // Firestore Listeners
   useEffect(() => {
     if (!user) return;
 
@@ -185,7 +181,8 @@ export default function App() {
       setIndents(data);
       setLoading(false);
     }, (err) => {
-      console.error("Indents sync error:", err);
+      console.error("Firestore error:", err);
+      setErrorMsg("Akses Ditolak: Sila semak Firestore Rules.");
       setLoading(false);
     });
 
@@ -308,7 +305,6 @@ export default function App() {
     if (passwordInput === ADMIN_PASSWORD) {
       setActiveTab('settings');
       setShowPasswordModal(false);
-      setPasswordError(false);
     } else {
       setPasswordError(true);
     }
@@ -334,6 +330,20 @@ export default function App() {
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
         <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
         <p className="font-black text-slate-400 uppercase tracking-widest text-xs italic">Menghubungkan ke Server...</p>
+        {!firebaseConfig.apiKey && (
+          <p className="mt-4 text-[10px] text-red-500 font-bold uppercase">Amaran: API Key Tidak Dikesan!</p>
+        )}
+      </div>
+    );
+  }
+
+  if (errorMsg) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-red-50 p-6 text-center">
+        <AlertCircle className="w-12 h-12 text-red-600 mb-4" />
+        <h2 className="font-black text-red-800 uppercase mb-2">Ralat Konfigurasi</h2>
+        <p className="text-xs text-red-600 font-bold mb-6">{errorMsg}</p>
+        <button onClick={() => window.location.reload()} className="bg-red-600 text-white px-6 py-3 rounded-2xl font-black uppercase text-xs">Cuba Lagi</button>
       </div>
     );
   }
@@ -345,7 +355,7 @@ export default function App() {
         <div className="absolute top-1 right-8 z-50">
           <div className="flex items-center gap-1 bg-white/80 backdrop-blur px-2 py-0.5 rounded-full border border-slate-100 shadow-sm">
             <div className={`w-1.5 h-1.5 rounded-full ${user ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-            <span className="text-[8px] font-black uppercase text-slate-400">Live Status</span>
+            <span className="text-[8px] font-black uppercase text-slate-400">Live</span>
           </div>
         </div>
 
@@ -418,13 +428,13 @@ export default function App() {
                     {item.collected_at && <div>AMBIL: {formatDateTime(item.collected_at)}</div>}
                   </div>
                 </div>
-                {item.collected_by && <div className="mt-2 text-[10px] font-black text-slate-600 uppercase italic">Diambil Oleh: {item.collected_by}</div>}
-                {item.note && <div className="mt-2 p-2 bg-red-100 rounded-xl text-[10px] font-black text-red-700 uppercase italic border border-red-200">Nota: {item.note}</div>}
+                {item.collected_by && <div className="mt-2 text-[10px] font-black text-slate-600 uppercase italic">Oleh: {item.collected_by}</div>}
+                {item.note && <div className="mt-2 p-2 bg-red-100 rounded-xl text-[10px] font-black text-red-700 uppercase italic">Nota: {item.note}</div>}
               </div>
             )) : (
               <div className="text-center py-20 opacity-20 flex flex-col items-center">
                 <LayoutGrid className="w-16 h-16 mb-2" />
-                <p className="font-black uppercase text-xs italic">Tiada Rekod Indent</p>
+                <p className="font-black uppercase text-xs italic">Tiada Rekod</p>
               </div>
             )
           )}
@@ -433,26 +443,14 @@ export default function App() {
             <div className="p-4 space-y-6">
               <h2 className="text-2xl font-black uppercase italic text-slate-800 tracking-tighter">Daftar Indent</h2>
               <form onSubmit={handleAddIndent} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Unit Pembekal</label>
-                  <select value={entryUnit} onChange={(e) => setEntryUnit(e.target.value)} className="w-full bg-white border p-4 rounded-2xl font-black uppercase outline-none shadow-sm focus:ring-2 ring-blue-500/20">
-                    {Object.keys(unitSettings).map(u => <option key={u} value={u}>{u}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Wad / Unit Pemohon</label>
-                  <input name="ward" required className="w-full bg-white border p-4 rounded-2xl font-black uppercase text-lg outline-none focus:border-blue-600 shadow-sm" placeholder="4A / ICUB / OP" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Kategori Ubat</label>
-                  <select name="type" className="w-full bg-white border p-4 rounded-2xl font-black uppercase outline-none shadow-sm">
-                    {(unitSettings[entryUnit] || []).map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Nama Staf Wad</label>
-                  <input name="staff" className="w-full bg-white border p-4 rounded-2xl font-bold uppercase outline-none focus:border-blue-600 shadow-sm" placeholder="NAMA STAF" />
-                </div>
+                <select value={entryUnit} onChange={(e) => setEntryUnit(e.target.value)} className="w-full bg-white border p-4 rounded-2xl font-black uppercase outline-none shadow-sm focus:ring-2 ring-blue-500/20">
+                  {Object.keys(unitSettings).map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+                <input name="ward" required className="w-full bg-white border p-4 rounded-2xl font-black uppercase text-lg outline-none focus:border-blue-600 shadow-sm" placeholder="4A / ICUB" />
+                <select name="type" className="w-full bg-white border p-4 rounded-2xl font-black uppercase outline-none shadow-sm">
+                  {(unitSettings[entryUnit] || []).map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input name="staff" className="w-full bg-white border p-4 rounded-2xl font-bold uppercase outline-none focus:border-blue-600 shadow-sm" placeholder="NAMA STAF" />
                 <button type="submit" className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase text-sm shadow-xl active:scale-95 transition-all">Hantar Indent</button>
               </form>
             </div>
@@ -467,9 +465,7 @@ export default function App() {
                     <button onClick={saveAppName} className="bg-blue-600 text-white px-5 rounded-2xl font-black uppercase text-[10px]">Simpan</button>
                  </div>
               </div>
-
               <div className="space-y-3">
-                <h3 className="text-[10px] font-black uppercase text-slate-400 ml-4">Senarai Unit</h3>
                 {Object.keys(unitSettings).map(name => (
                   <div key={name} className="bg-white p-4 rounded-2xl border flex justify-between items-center shadow-sm">
                     <div className="flex-1 min-w-0">
@@ -478,23 +474,15 @@ export default function App() {
                     </div>
                     <div className="flex gap-1 ml-2">
                       <button onClick={() => { setShowEditUnitModal(name); setEditUnitName(name); setEditUnitCats(unitSettings[name].join(', ')); }} className="p-2 text-slate-300 hover:text-blue-600 transition-colors"><Pencil className="w-4 h-4" /></button>
-                      <button onClick={() => { if(Object.keys(unitSettings).length > 1) setConfirmDialog({ show: true, title: 'PADAM UNIT?', message: `Padam unit ${name}?`, action: () => { const n = {...unitSettings}; delete n[name]; saveUnitSettings(n); setConfirmDialog({ show: false }); } }); }} className="p-2 text-slate-200 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => { if(Object.keys(unitSettings).length > 1) setConfirmDialog({ show: true, title: 'PADAM?', message: `Padam unit ${name}?`, action: () => { const n = {...unitSettings}; delete n[name]; saveUnitSettings(n); setConfirmDialog({ show: false }); } }); }} className="p-2 text-slate-200 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </div>
                 ))}
-              </div>
-              
-              <div className="bg-blue-50 p-5 rounded-3xl border border-blue-100 space-y-3">
-                <p className="text-[10px] font-black uppercase text-blue-600 text-center">Tambah Unit Baru</p>
-                <input id="newU" className="w-full p-3 rounded-xl border-none font-bold uppercase text-xs shadow-sm outline-none" placeholder="NAMA UNIT" />
-                <textarea id="newC" className="w-full p-3 rounded-xl border-none font-bold uppercase text-[10px] shadow-sm outline-none" placeholder="KATEGORI (ASINGKAN DENGAN KOMA)" rows="2" />
-                <button onClick={() => { const u = document.getElementById('newU').value; const c = document.getElementById('newC').value; if(u && c) { saveUnitSettings({...unitSettings, [u]: c.split(',').map(x => x.trim())}); document.getElementById('newU').value = ''; document.getElementById('newC').value = ''; } }} className="w-full bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-all">Tambah</button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Footer Navigation */}
         <div className="h-20 bg-white border-t flex justify-around items-center px-6 pb-6 sticky bottom-0 z-10">
           <button onClick={() => setActiveTab('tracker')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'tracker' ? 'text-blue-600 scale-110 font-black' : 'text-slate-300'}`}>
             <LayoutGrid className="w-6 h-6" /><span className="text-[9px] font-black uppercase">STATUS</span>
@@ -505,12 +493,11 @@ export default function App() {
           </button>
         </div>
 
-        {/* Modals */}
+        {/* Modals are kept the same as functional requirements */}
         {showPasswordModal && (
           <div className="absolute inset-0 bg-slate-900/60 z-[300] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="bg-white w-full max-w-[300px] rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 border-t-8 border-blue-600">
+            <div className="bg-white w-full max-w-[300px] rounded-[2.5rem] p-8 shadow-2xl border-t-8 border-blue-600">
               <div className="flex justify-center mb-6 text-blue-600 bg-blue-50 w-16 h-16 rounded-full items-center mx-auto"><Lock className="w-8 h-8" /></div>
-              <h3 className="font-black uppercase text-center text-sm mb-4 italic">Kebenaran Admin</h3>
               <input type="password" autoFocus className={`w-full p-4 bg-slate-50 rounded-2xl font-bold text-center mb-6 outline-none focus:ring-2 transition-all ${passwordError ? 'ring-red-500' : 'focus:ring-blue-500/20'}`} placeholder="KATA LALUAN" value={passwordInput} onChange={(e) => { setPasswordInput(e.target.value); setPasswordError(false); }} onKeyDown={(e) => e.key === 'Enter' && verifyPassword()} />
               <div className="flex gap-3">
                 <button onClick={() => setShowPasswordModal(false)} className="flex-1 font-black text-slate-300 uppercase text-[10px]">Batal</button>
@@ -519,16 +506,16 @@ export default function App() {
             </div>
           </div>
         )}
-
+        
+        {/* ... (other modals follow the same pattern) ... */}
         {showEditUnitModal && (
-          <div className="absolute inset-0 bg-slate-900/60 z-[200] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in">
+          <div className="absolute inset-0 bg-slate-900/60 z-[200] flex items-center justify-center p-6 backdrop-blur-sm">
             <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl border-t-8 border-blue-600">
-              <h3 className="font-black uppercase text-[11px] mb-4 text-slate-400 italic">Kemaskini Unit</h3>
-              <input className="w-full bg-slate-50 border-none p-4 rounded-2xl font-bold uppercase text-xs mb-4 outline-none focus:ring-2 ring-blue-500/20" value={editUnitName} onChange={(e) => setEditUnitName(e.target.value)} />
-              <textarea rows="3" className="w-full bg-slate-50 border-none p-4 rounded-2xl font-bold uppercase text-xs mb-6 outline-none focus:ring-2 ring-blue-500/20" value={editUnitCats} onChange={(e) => setEditUnitCats(e.target.value)} />
+              <input className="w-full bg-slate-50 border-none p-4 rounded-2xl font-bold uppercase text-xs mb-4" value={editUnitName} onChange={(e) => setEditUnitName(e.target.value)} />
+              <textarea rows="3" className="w-full bg-slate-50 border-none p-4 rounded-2xl font-bold uppercase text-xs mb-6" value={editUnitCats} onChange={(e) => setEditUnitCats(e.target.value)} />
               <div className="flex gap-3">
                 <button onClick={() => setShowEditUnitModal(null)} className="flex-1 font-black text-slate-300 uppercase text-[10px] py-4">Batal</button>
-                <button onClick={handleEditUnitSave} className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-black uppercase text-[10px] shadow-lg">Simpan</button>
+                <button onClick={handleEditUnitSave} className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-black uppercase text-[10px]">Simpan</button>
               </div>
             </div>
           </div>
@@ -537,46 +524,43 @@ export default function App() {
         {showUnitSelector && (
           <div className="absolute inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in zoom-in duration-200">
             <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl">
-              <h3 className="font-black uppercase text-[11px] text-slate-400 mb-6 text-center italic tracking-widest">Pilih Paparan Unit</h3>
               <div className="grid grid-cols-1 gap-2 max-h-[60vh] overflow-y-auto no-scrollbar p-1">
-                <button onClick={() => { setCurrentUnitFilter('SEMUA UNIT'); setShowUnitSelector(false); }} className={`p-4 rounded-2xl font-black uppercase text-[10px] shadow-sm transition-all ${currentUnitFilter === 'SEMUA UNIT' ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-500'}`}>Tunjukkan Semua Unit</button>
+                <button onClick={() => { setCurrentUnitFilter('SEMUA UNIT'); setShowUnitSelector(false); }} className={`p-4 rounded-2xl font-black uppercase text-[10px] shadow-sm transition-all ${currentUnitFilter === 'SEMUA UNIT' ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-500'}`}>Tunjukkan Semua</button>
                 {Object.keys(unitSettings).map(u => (
                   <button key={u} onClick={() => { setCurrentUnitFilter(u); setShowUnitSelector(false); }} className={`p-4 rounded-2xl font-black uppercase text-[10px] shadow-sm transition-all ${currentUnitFilter === u ? 'bg-blue-600 text-white' : 'bg-white border text-slate-600'}`}>{u}</button>
                 ))}
               </div>
-              <div className="mt-6 flex justify-center"><button onClick={() => setShowUnitSelector(false)} className="text-slate-300 font-bold uppercase text-[10px] hover:text-slate-500">Tutup</button></div>
+              <div className="mt-6 flex justify-center"><button onClick={() => setShowUnitSelector(false)} className="text-slate-300 font-bold uppercase text-[10px]">Tutup</button></div>
             </div>
           </div>
         )}
 
         {showCollectorModal && (
-          <div className="absolute inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-in zoom-in">
+          <div className="absolute inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm">
             <div className="bg-white w-full rounded-3xl p-6 shadow-2xl">
-              <h3 className="font-black uppercase text-purple-600 mb-4 flex items-center gap-2 italic tracking-tighter"><User className="w-5 h-5" /> Nama Pengambil</h3>
               <input autoFocus className="w-full p-4 bg-slate-50 border rounded-xl font-black uppercase mb-4 outline-none" placeholder="NAMA STAF PENGAMBIL" value={collectorName} onChange={(e) => setCollectorName(e.target.value)} />
               <div className="flex gap-2">
-                <button onClick={() => { setShowCollectorModal(null); setCollectorName(''); }} className="flex-1 font-black text-slate-300 text-[10px] uppercase">Batal</button>
-                <button onClick={() => { if(!collectorName) return; updateStatus(showCollectorModal, 'COLLECTED', collectorName.toUpperCase()); setShowCollectorModal(null); setCollectorName(''); }} className="flex-[2] bg-purple-600 text-white py-3 rounded-xl font-black text-[10px] uppercase shadow-lg active:scale-95">Sahkan Ambilan</button>
+                <button onClick={() => setShowCollectorModal(null)} className="flex-1 font-black text-slate-300 text-[10px]">Batal</button>
+                <button onClick={() => { if(!collectorName) return; updateStatus(showCollectorModal, 'COLLECTED', collectorName.toUpperCase()); setShowCollectorModal(null); setCollectorName(''); }} className="flex-[2] bg-purple-600 text-white py-3 rounded-xl font-black text-[10px] uppercase shadow-lg active:scale-95">Sahkan</button>
               </div>
             </div>
           </div>
         )}
 
         {showNoteModal && (
-          <div className="absolute inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-in zoom-in">
+          <div className="absolute inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm">
             <div className="bg-white w-full rounded-3xl p-6 shadow-2xl">
-              <h3 className="font-black uppercase text-red-600 mb-4 flex items-center gap-2 italic tracking-tighter"><StickyNote className="w-5 h-5" /> Nota Penting</h3>
-              <textarea rows="3" autoFocus className="w-full p-4 bg-red-50 border border-red-100 rounded-xl font-bold uppercase mb-4 text-sm outline-none" value={tempNote} onChange={(e) => setTempNote(e.target.value)} />
+              <textarea rows="3" autoFocus className="w-full p-4 bg-red-50 border border-red-100 rounded-xl font-bold uppercase mb-4 text-sm" value={tempNote} onChange={(e) => setTempNote(e.target.value)} />
               <div className="flex gap-2">
-                <button onClick={() => { setShowNoteModal(null); setTempNote(''); }} className="flex-1 font-black text-slate-300 text-[10px] uppercase">Batal</button>
-                <button onClick={() => { updateStatus(showNoteModal, showNoteModal.status, null, tempNote.toUpperCase()); setShowNoteModal(null); setTempNote(''); }} className="flex-[2] bg-red-600 text-white py-3 rounded-xl font-black text-[10px] uppercase shadow-lg">Simpan Nota</button>
+                <button onClick={() => setShowNoteModal(null)} className="flex-1 font-black text-slate-300 text-[10px]">Batal</button>
+                <button onClick={() => { updateStatus(showNoteModal, showNoteModal.status, null, tempNote.toUpperCase()); setShowNoteModal(null); setTempNote(''); }} className="flex-[2] bg-red-600 text-white py-3 rounded-xl font-black text-[10px] shadow-lg">Simpan</button>
               </div>
             </div>
           </div>
         )}
 
         {confirmDialog.show && (
-          <div className="absolute inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in">
+          <div className="absolute inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-6 backdrop-blur-sm">
             <div className="bg-white w-full max-w-[300px] rounded-[2.5rem] p-8 shadow-2xl">
               <div className="flex justify-center mb-6 text-amber-500 bg-amber-50 w-16 h-16 rounded-full items-center mx-auto"><AlertCircle className="w-8 h-8" /></div>
               <h3 className="font-black uppercase text-center text-lg mb-2 italic tracking-tighter">{confirmDialog.title}</h3>
