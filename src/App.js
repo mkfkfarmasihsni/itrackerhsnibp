@@ -38,20 +38,11 @@ import {
 } from 'lucide-react';
 
 /**
- * PENGURUSAN KONFIGURASI
- * Menggunakan semakan keselamatan untuk process.env bagi mengelakkan ReferenceError.
+ * PENGURUSAN KONFIGURASI (RUNTIME SAFE)
+ * Menggunakan akses literal untuk mengelakkan ralat 'process is not defined'
  */
-const getSafeEnv = (key) => {
-  try {
-    if (typeof process !== 'undefined' && process.env) {
-      return process.env[key] || "";
-    }
-  } catch (e) {}
-  return "";
-};
-
 const getFirebaseConfig = () => {
-  // Semakan persekitaran simulasi (Canvas/Dalaman)
+  // 1. Semak jika dijalankan dalam persekitaran simulasi (Canvas/Internal)
   if (typeof window !== 'undefined' && window.__firebase_config) {
     try {
       return JSON.parse(window.__firebase_config);
@@ -60,22 +51,24 @@ const getFirebaseConfig = () => {
     }
   }
 
-  // Guna Environment Variables dari Vercel/Local dengan semakan selamat
+  // 2. Akses Environment Variables secara literal (PENTING untuk Create React App)
+  // Nota: Kita tidak menggunakan process.env[key] kerana ia akan menyebabkan ReferenceError di pelayar.
   return {
-    apiKey: getSafeEnv("REACT_APP_FIREBASE_API_KEY") || getSafeEnv("VITE_FIREBASE_API_KEY") || "",
-    authDomain: getSafeEnv("REACT_APP_FIREBASE_AUTH_DOMAIN") || getSafeEnv("VITE_FIREBASE_AUTH_DOMAIN") || "",
-    projectId: getSafeEnv("REACT_APP_FIREBASE_PROJECT_ID") || getSafeEnv("VITE_FIREBASE_PROJECT_ID") || "",
-    storageBucket: getSafeEnv("REACT_APP_FIREBASE_STORAGE_BUCKET") || getSafeEnv("VITE_FIREBASE_STORAGE_BUCKET") || "",
-    messagingSenderId: getSafeEnv("REACT_APP_FIREBASE_MESSAGING_SENDER_ID") || getSafeEnv("VITE_FIREBASE_MESSAGING_SENDER_ID") || "",
-    appId: getSafeEnv("REACT_APP_FIREBASE_APP_ID") || getSafeEnv("VITE_FIREBASE_APP_ID") || ""
+    apiKey: (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || "") : "",
+    authDomain: (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN || "") : "",
+    projectId: (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "") : "",
+    storageBucket: (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || "") : "",
+    messagingSenderId: (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "") : "",
+    appId: (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID || "") : ""
   };
 };
 
+// Konfigurasi Asas
 const firebaseConfig = getFirebaseConfig();
-const GOOGLE_SHEET_WEBHOOK_URL = getSafeEnv("REACT_APP_SHEET_WEBHOOK_URL") || getSafeEnv("VITE_SHEET_WEBHOOK_URL") || "";
+const GOOGLE_SHEET_WEBHOOK_URL = (typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_SHEET_WEBHOOK_URL || process.env.VITE_SHEET_WEBHOOK_URL || "") : "";
 const appId = (typeof window !== 'undefined' && window.__app_id) 
   ? window.__app_id 
-  : (getSafeEnv("REACT_APP_APP_ID") || getSafeEnv("VITE_APP_ID") || 'pharmacy-tracker-v2');
+  : ((typeof process !== 'undefined' && process.env) ? (process.env.REACT_APP_APP_ID || process.env.VITE_APP_ID || 'pharmacy-tracker-v2') : 'pharmacy-tracker-v2');
 
 // Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
@@ -324,7 +317,7 @@ export default function App() {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
         <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-        <p className="font-black text-slate-400 uppercase tracking-widest text-xs italic">Menyambung ke Awan...</p>
+        <p className="font-black text-slate-400 uppercase tracking-widest text-xs italic">Menyediakan Aplikasi...</p>
       </div>
     );
   }
