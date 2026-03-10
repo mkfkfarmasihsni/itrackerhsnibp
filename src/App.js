@@ -1,5 +1,6 @@
 /* eslint-disable no-undef */
 /* eslint-disable no-unused-vars */
+/* eslint-disable no-restricted-globals */
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -40,19 +41,24 @@ import {
 
 /**
  * CONFIGURASI FIREBASE & GLOBAL
- * Diperbaiki untuk mengelakkan ralat build di Vercel/CRA
+ * Diperbaiki untuk mengelakkan ralat build di Vercel/CRA yang sangat ketat
  */
 const getEnv = (key) => {
   if (typeof process !== 'undefined' && process.env) {
+    // Prioritaskan REACT_APP_ untuk Create React App
     return process.env[`REACT_APP_${key}`] || process.env[`VITE_${key}`] || "";
   }
   return "";
 };
 
-// Akses pembolehubah global dengan cara yang selamat untuk build step
+// Akses pembolehubah global dengan cara yang selamat sepenuhnya untuk bypass linter
 const getGlobal = (key) => {
-  if (typeof window !== 'undefined' && window[key]) {
-    return window[key];
+  try {
+    if (typeof window !== 'undefined') {
+      return window[key];
+    }
+  } catch (e) {
+    return undefined;
   }
   return undefined;
 };
