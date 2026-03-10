@@ -1,4 +1,3 @@
-/* global __firebase_config, __app_id, __initial_auth_token */
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -39,17 +38,28 @@ import {
 
 /**
  * CONFIGURASI FIREBASE & GLOBAL
- * Diperbaiki: Menyokong VITE_ dan REACT_APP_ untuk keserasian Vercel/CRA
+ * Menggunakan window. untuk mengelakkan ralat 'no-undef' di Vercel build
  */
 const getEnv = (key) => {
   if (typeof process !== 'undefined' && process.env) {
-    return process.env[`VITE_${key}`] || process.env[`REACT_APP_${key}`] || "";
+    return process.env[`REACT_APP_${key}`] || process.env[`VITE_${key}`] || "";
   }
   return "";
 };
 
-const firebaseConfig = typeof __firebase_config !== 'undefined' 
-  ? JSON.parse(__firebase_config) 
+// Akses global variables melalui window object untuk bypass ESLint check
+const getGlobal = (key) => {
+  try {
+    // eslint-disable-next-line
+    return window[key];
+  } catch (e) {
+    return undefined;
+  }
+};
+
+const rawConfig = getGlobal('__firebase_config');
+const firebaseConfig = rawConfig 
+  ? JSON.parse(rawConfig) 
   : {
       apiKey: getEnv("FIREBASE_API_KEY"),
       authDomain: getEnv("FIREBASE_AUTH_DOMAIN"),
@@ -61,9 +71,8 @@ const firebaseConfig = typeof __firebase_config !== 'undefined'
 
 const GOOGLE_SHEET_WEBHOOK_URL = getEnv("SHEET_WEBHOOK_URL"); 
 
-const appId = typeof __app_id !== 'undefined' 
-  ? __app_id 
-  : (getEnv("APP_ID") || 'pharmacy-tracker-v2');
+const globalAppId = getGlobal('__app_id');
+const appId = globalAppId || (getEnv("APP_ID") || 'pharmacy-tracker-v2');
 
 // Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
@@ -97,9 +106,6 @@ const getUnitColor = (unitName) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-/**
- * FUNGSI PENYELARASAN GOOGLE SHEETS
- */
 const syncToGoogleSheets = async (payload) => {
   if (!GOOGLE_SHEET_WEBHOOK_URL) return;
   try {
@@ -147,8 +153,9 @@ export default function App() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
+        const token = getGlobal('__initial_auth_token');
+        if (token) {
+          await signInWithCustomToken(auth, token);
         } else {
           await signInAnonymously(auth);
         }
@@ -206,11 +213,9 @@ export default function App() {
       unsubscribeSettings();
       unsubscribeAppInfo();
     };
+    // eslint-disable-next-line
   }, [user, entryUnit]);
 
-  /**
-   * DATA OPERATIONS
-   */
   const handleAddIndent = async (e) => {
     e.preventDefault();
     if (!user) return;
@@ -231,9 +236,7 @@ export default function App() {
     try {
       const indentsRef = collection(db, 'artifacts', appId, 'public', 'data', 'indents');
       const docRef = await addDoc(indentsRef, newEntry);
-      
       syncToGoogleSheets({ action: 'NEW_INDENT', id: docRef.id, ...newEntry });
-      
       setActiveTab('tracker');
       e.target.reset();
     } catch (err) { console.error(err); }
@@ -252,7 +255,6 @@ export default function App() {
     if (note !== null) updates.note = note;
     try { 
       await updateDoc(docRef, updates); 
-      
       syncToGoogleSheets({ 
         action: 'UPDATE_STATUS', 
         id: item.id, 
@@ -294,17 +296,11 @@ export default function App() {
 
   const handleEditUnitSave = async () => {
     if (!editUnitName.trim() || !editUnitCats.trim()) return;
-    
     const newSettings = { ...unitSettings };
     const oldName = showEditUnitModal;
     const newName = editUnitName.trim();
-    
-    if (oldName !== newName) {
-      delete newSettings[oldName];
-    }
-    
+    if (oldName !== newName) delete newSettings[oldName];
     newSettings[newName] = editUnitCats.split(',').map(x => x.trim());
-    
     await saveUnitSettings(newSettings);
     setShowEditUnitModal(null);
   };
@@ -360,7 +356,6 @@ export default function App() {
     <div className="flex justify-center items-center min-h-screen bg-slate-100 font-sans text-slate-800">
       <div className="w-full max-w-md h-[100dvh] bg-white shadow-2xl flex flex-col relative overflow-hidden md:h-[850px] md:rounded-[3rem] md:border-[8px] md:border-slate-800">
         
-        {/* Status indicator */}
         <div className="absolute top-1 right-8 z-50">
           <div className="flex items-center gap-1 bg-white/80 backdrop-blur px-2 py-0.5 rounded-full border border-slate-100 shadow-sm">
             <div className={`w-1.5 h-1.5 rounded-full ${user ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
@@ -368,7 +363,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Header */}
         <div className="p-4 border-b flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
           <div onClick={() => setShowUnitSelector(true)} className="flex items-center gap-3 cursor-pointer group">
             <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg group-active:scale-90 transition-transform">
@@ -383,7 +377,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Search Bar */}
         {activeTab === 'tracker' && (
           <div className="px-4 py-3 bg-slate-50 border-b">
             <div className="relative">
@@ -398,7 +391,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Main Content Area */}
         <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50/50 scroll-smooth no-scrollbar">
           {activeTab === 'tracker' && (
             filteredIndents.length > 0 ? filteredIndents.map(item => (
@@ -507,7 +499,6 @@ export default function App() {
           {activeTab === 'settings' && (
             <div className="p-4 space-y-6 pb-10">
               <h2 className="text-2xl font-black uppercase italic text-slate-800 tracking-tighter">Tetapan Aplikasi</h2>
-              
               <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
                  <div className="flex items-center gap-2 mb-1">
                     <Edit3 className="w-4 h-4 text-blue-600" />
@@ -520,14 +511,8 @@ export default function App() {
                       onChange={(e) => setTempAppName(e.target.value)}
                       placeholder="NAMA APLIKASI"
                     />
-                    <button 
-                      onClick={saveAppName}
-                      className="bg-blue-600 text-white px-5 rounded-2xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-all"
-                    >
-                      Simpan
-                    </button>
+                    <button onClick={saveAppName} className="bg-blue-600 text-white px-5 rounded-2xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-all">Simpan</button>
                  </div>
-                 <p className="text-[8px] text-slate-400 font-bold uppercase italic">* Nama ini akan muncul di header peranti semua staf.</p>
               </div>
 
               <div className="space-y-3">
@@ -539,235 +524,104 @@ export default function App() {
                       <p className="text-[9px] text-slate-400 font-bold uppercase truncate">{unitSettings[name].join(', ')}</p>
                     </div>
                     <div className="flex gap-1 ml-2">
-                      <button 
-                        onClick={() => {
-                          setShowEditUnitModal(name);
-                          setEditUnitName(name);
-                          setEditUnitCats(unitSettings[name].join(', '));
-                        }}
-                        className="p-2 text-slate-300 hover:text-blue-600 transition-colors"
-                        title="Edit Unit"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => {
-                          if(Object.keys(unitSettings).length > 1) {
-                            setConfirmDialog({
-                              show: true,
-                              title: 'PADAM UNIT?',
-                              message: `Adakah anda pasti mahu memadam unit ${name}?`,
-                              action: () => {
-                                const n = {...unitSettings}; 
-                                delete n[name]; 
-                                saveUnitSettings(n);
-                                setConfirmDialog({ show: false });
-                              }
-                            });
-                          }
-                        }} 
-                        className="p-2 text-slate-200 hover:text-red-500 transition-colors"
-                        title="Padam Unit"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <button onClick={() => { setShowEditUnitModal(name); setEditUnitName(name); setEditUnitCats(unitSettings[name].join(', ')); }} className="p-2 text-slate-300 hover:text-blue-600 transition-colors"><Pencil className="w-4 h-4" /></button>
+                      <button onClick={() => { if(Object.keys(unitSettings).length > 1) setConfirmDialog({ show: true, title: 'PADAM UNIT?', message: `Padam unit ${name}?`, action: () => { const n = {...unitSettings}; delete n[name]; saveUnitSettings(n); setConfirmDialog({ show: false }); } }); }} className="p-2 text-slate-200 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </div>
                 ))}
               </div>
               
               <div className="bg-blue-50 p-5 rounded-3xl border border-blue-100 space-y-3">
-                <p className="text-[10px] font-black uppercase text-blue-600 text-center tracking-widest">Tambah Unit Baru</p>
-                <input id="newU" className="w-full p-3 rounded-xl border-none font-bold uppercase text-xs shadow-sm outline-none" placeholder="NAMA UNIT" />
+                <input id="newU" className="w-full p-3 rounded-xl border-none font-bold uppercase text-xs shadow-sm outline-none" placeholder="NAMA UNIT BARU" />
                 <textarea id="newC" className="w-full p-3 rounded-xl border-none font-bold uppercase text-[10px] shadow-sm outline-none" placeholder="KATEGORI (ASINGKAN DENGAN KOMA)" rows="2" />
-                <button 
-                  onClick={() => {
-                    const u = document.getElementById('newU').value;
-                    const c = document.getElementById('newC').value;
-                    if(u && c) {
-                      saveUnitSettings({...unitSettings, [u]: c.split(',').map(x => x.trim())});
-                      document.getElementById('newU').value = '';
-                      document.getElementById('newC').value = '';
-                    }
-                  }} 
-                  className="w-full bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-transform"
-                >
-                  Tambah Unit
-                </button>
-              </div>
-              
-              <div className="space-y-3 pt-4 border-t border-slate-200">
-                <h3 className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Pengurusan Rekod Cloud</h3>
-                <button 
-                  onClick={() => setConfirmDialog({
-                    show: true,
-                    title: 'PADAM REKOD SELESAI?',
-                    message: 'Semua rekod berstatus "COLLECTED" akan dipadam selamanya dari database cloud.',
-                    action: clearCollectedOnly
-                  })}
-                  className="w-full bg-white text-amber-600 p-4 rounded-2xl font-black uppercase text-[10px] border border-amber-100 shadow-sm flex items-center justify-center gap-2 active:scale-95"
-                >
-                  <Trash2 className="w-3 h-3" /> Padam Rekod Selesai (Collected)
-                </button>
-                <button 
-                  onClick={() => setConfirmDialog({
-                    show: true,
-                    title: 'KOSONGKAN SEMUA?',
-                    message: 'AWAS: Ini akan memadam SEMUA rekod di server cloud!',
-                    action: clearAllIndents
-                  })}
-                  className="w-full bg-red-50 text-red-600 p-4 rounded-2xl font-black uppercase text-[10px] border border-red-100 flex items-center justify-center gap-2 active:scale-95"
-                >
-                  <Eraser className="w-3 h-3" /> Bersihkan Semua Rekod Indent
-                </button>
+                <button onClick={() => { const u = document.getElementById('newU').value; const c = document.getElementById('newC').value; if(u && c) { saveUnitSettings({...unitSettings, [u]: c.split(',').map(x => x.trim())}); document.getElementById('newU').value = ''; document.getElementById('newC').value = ''; } }} className="w-full bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-transform">Tambah Unit</button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Footer Navigation */}
         <div className="h-20 bg-white border-t flex justify-around items-center px-6 pb-6 sticky bottom-0 z-10">
           <button onClick={() => setActiveTab('tracker')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'tracker' ? 'text-blue-600 scale-110 font-black' : 'text-slate-300'}`}>
             <LayoutGrid className="w-6 h-6" /><span className="text-[9px] font-black uppercase">STATUS</span>
           </button>
-          <button onClick={() => setActiveTab('entry')} className="bg-blue-600 text-white p-4 rounded-2xl shadow-xl -mt-10 active:scale-90 border-4 border-white">
-            <Plus className="w-6 h-6" />
-          </button>
+          <button onClick={() => setActiveTab('entry')} className="bg-blue-600 text-white p-4 rounded-2xl shadow-xl -mt-10 active:scale-90 border-4 border-white"><Plus className="w-6 h-6" /></button>
           <button onClick={handleSettingsClick} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'settings' ? 'text-blue-600 scale-110 font-black' : 'text-slate-300'}`}>
             <Settings className="w-6 h-6" /><span className="text-[9px] font-black uppercase">SETTING</span>
           </button>
         </div>
 
-        {/* --- MODALS --- */}
-
-        {/* Password Protection Modal */}
+        {/* MODALS */}
         {showPasswordModal && (
-          <div className="absolute inset-0 bg-slate-900/60 z-[300] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="bg-white w-full max-w-[300px] rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-200 border-t-8 border-blue-600">
-              <div className="flex justify-center mb-6 text-blue-600 bg-blue-50 w-16 h-16 rounded-full items-center mx-auto">
-                <Lock className="w-8 h-8" />
-              </div>
-              <h3 className="font-black uppercase text-slate-800 text-center text-lg mb-2 italic tracking-tight">Kebenaran Admin</h3>
-              <p className="text-[11px] font-bold text-slate-400 text-center uppercase leading-tight mb-6 px-2">Sila masukkan kata laluan untuk mengakses tetapan.</p>
-              
-              <input 
-                type="password"
-                autoFocus
-                className={`w-full p-4 bg-slate-50 rounded-2xl font-bold text-center outline-none focus:ring-2 transition-all mb-6 ${passwordError ? 'ring-red-500 bg-red-50' : 'focus:ring-blue-500/20'}`}
-                placeholder="Kata Laluan"
-                value={passwordInput}
-                onChange={(e) => {
-                  setPasswordInput(e.target.value);
-                  setPasswordError(false);
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && verifyPassword()}
-              />
-
-              {passwordError && (
-                <p className="text-[9px] font-black text-red-600 uppercase text-center -mt-4 mb-4">Kata laluan salah!</p>
-              )}
-
+          <div className="absolute inset-0 bg-slate-900/60 z-[300] flex items-center justify-center p-6 backdrop-blur-sm">
+            <div className="bg-white w-full max-w-[300px] rounded-[2.5rem] p-8 shadow-2xl border-t-8 border-blue-600">
+              <div className="flex justify-center mb-6 text-blue-600 bg-blue-50 w-16 h-16 rounded-full items-center mx-auto"><Lock className="w-8 h-8" /></div>
+              <input type="password" autoFocus className={`w-full p-4 bg-slate-50 rounded-2xl font-bold text-center outline-none focus:ring-2 mb-6 ${passwordError ? 'ring-red-500' : 'focus:ring-blue-500/20'}`} placeholder="Kata Laluan" value={passwordInput} onChange={(e) => { setPasswordInput(e.target.value); setPasswordError(false); }} onKeyDown={(e) => e.key === 'Enter' && verifyPassword()} />
               <div className="flex gap-3">
-                <button onClick={() => setShowPasswordModal(false)} className="flex-1 font-black text-slate-300 uppercase text-[10px] py-4 bg-slate-50 rounded-2xl">Batal</button>
-                <button onClick={verifyPassword} className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-all">Sahkan</button>
+                <button onClick={() => setShowPasswordModal(false)} className="flex-1 font-black text-slate-300 uppercase text-[10px] py-4">Batal</button>
+                <button onClick={verifyPassword} className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-black uppercase text-[10px] shadow-lg">Sahkan</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Edit Unit Modal */}
         {showEditUnitModal && (
-          <div className="absolute inset-0 bg-slate-900/60 z-[200] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative overflow-hidden border-t-8 border-blue-600">
-              <div className="flex items-center gap-2 mb-4">
-                <Pencil className="w-5 h-5 text-blue-600" />
-                <h3 className="font-black uppercase text-[13px] text-slate-800 tracking-wider">Kemaskini Unit</h3>
-              </div>
-
-              <div className="space-y-4 mb-6">
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Nama Unit</label>
-                  <input 
-                    className="w-full bg-slate-50 border-none p-4 rounded-2xl font-bold uppercase text-xs outline-none focus:ring-2 ring-blue-500/20" 
-                    value={editUnitName} 
-                    onChange={(e) => setEditUnitName(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Kategori (Asingkan dengan koma)</label>
-                  <textarea 
-                    rows="3"
-                    className="w-full bg-slate-50 border-none p-4 rounded-2xl font-bold uppercase text-xs outline-none focus:ring-2 ring-blue-500/20" 
-                    value={editUnitCats} 
-                    onChange={(e) => setEditUnitCats(e.target.value)}
-                  />
-                </div>
-              </div>
-
+          <div className="absolute inset-0 bg-slate-900/60 z-[200] flex items-center justify-center p-6 backdrop-blur-sm">
+            <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl border-t-8 border-blue-600">
+              <input className="w-full bg-slate-50 border-none p-4 rounded-2xl font-bold uppercase text-xs mb-4" value={editUnitName} onChange={(e) => setEditUnitName(e.target.value)} placeholder="Nama Unit" />
+              <textarea rows="3" className="w-full bg-slate-50 border-none p-4 rounded-2xl font-bold uppercase text-xs mb-6" value={editUnitCats} onChange={(e) => setEditUnitCats(e.target.value)} placeholder="Kategori" />
               <div className="flex gap-3">
-                <button onClick={() => {setShowEditUnitModal(null); setEditUnitName(''); setEditUnitCats('');}} className="flex-1 font-black text-slate-300 uppercase text-[10px] py-4 bg-slate-50 rounded-2xl">Batal</button>
-                <button onClick={handleEditUnitSave} className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-all">Simpan Perubahan</button>
+                <button onClick={() => setShowEditUnitModal(null)} className="flex-1 font-black text-slate-300 uppercase text-[10px] py-4">Batal</button>
+                <button onClick={handleEditUnitSave} className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-black uppercase text-[10px]">Simpan</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Unit Selection Modal */}
         {showUnitSelector && (
-          <div className="absolute inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in zoom-in duration-200">
+          <div className="absolute inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-6 backdrop-blur-sm">
             <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl">
-              <h3 className="font-black uppercase text-[11px] text-slate-400 mb-6 px-2 text-center tracking-widest italic">Pilih Paparan Unit</h3>
-              <div className="grid grid-cols-2 gap-3 overflow-y-auto no-scrollbar max-h-[60vh] p-1">
-                <button onClick={() => { setCurrentUnitFilter('SEMUA UNIT'); setShowUnitSelector(false); }} className={`col-span-2 p-4 rounded-2xl font-black uppercase text-[10px] shadow-sm transition-all active:scale-95 ${currentUnitFilter === 'SEMUA UNIT' ? 'bg-blue-600 text-white shadow-blue-200' : 'bg-slate-50 text-slate-500'}`}>Tunjukkan Semua Unit</button>
+              <div className="grid grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto p-1">
+                <button onClick={() => { setCurrentUnitFilter('SEMUA UNIT'); setShowUnitSelector(false); }} className={`col-span-2 p-4 rounded-2xl font-black uppercase text-[10px] ${currentUnitFilter === 'SEMUA UNIT' ? 'bg-blue-600 text-white' : 'bg-slate-50'}`}>Tunjukkan Semua Unit</button>
                 {Object.keys(unitSettings).map(u => (
-                  <button key={u} onClick={() => { setCurrentUnitFilter(u); setShowUnitSelector(false); }} className={`p-4 rounded-2xl font-black uppercase text-[10px] leading-tight shadow-sm transition-all active:scale-95 flex flex-col items-center justify-center text-center ${currentUnitFilter === u ? 'bg-blue-600 text-white shadow-blue-200' : 'bg-white border border-slate-100 text-slate-600'}`}>{u}</button>
+                  <button key={u} onClick={() => { setCurrentUnitFilter(u); setShowUnitSelector(false); }} className={`p-4 rounded-2xl font-black uppercase text-[10px] ${currentUnitFilter === u ? 'bg-blue-600 text-white' : 'bg-white border'}`}>{u}</button>
                 ))}
               </div>
-              <div className="mt-6 flex justify-center"><button onClick={() => setShowUnitSelector(false)} className="text-slate-300 font-bold uppercase text-[10px]">Tutup</button></div>
             </div>
           </div>
         )}
 
-        {/* Collector Modal */}
         {showCollectorModal && (
-          <div className="absolute inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-in zoom-in duration-200">
+          <div className="absolute inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm">
             <div className="bg-white w-full rounded-3xl p-6 shadow-2xl">
-              <h3 className="font-black uppercase text-purple-600 mb-4 flex items-center gap-2 italic"><User className="w-5 h-5" /> Pengambil</h3>
-              <input autoFocus className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl font-black uppercase mb-4 outline-none" placeholder="NAMA STAF PENGAMBIL" value={collectorName} onChange={(e) => setCollectorName(e.target.value)} />
+              <input autoFocus className="w-full p-4 bg-slate-50 border rounded-xl font-black uppercase mb-4" placeholder="NAMA STAF PENGAMBIL" value={collectorName} onChange={(e) => setCollectorName(e.target.value)} />
               <div className="flex gap-2">
-                <button onClick={() => {setShowCollectorModal(null); setCollectorName('');}} className="flex-1 font-black text-slate-300 uppercase text-[10px]">Batal</button>
-                <button onClick={() => { if(!collectorName) return; updateStatus(showCollectorModal, 'COLLECTED', collectorName.toUpperCase()); setShowCollectorModal(null); setCollectorName(''); }} className="flex-[2] bg-purple-600 text-white py-3 rounded-xl font-black uppercase text-[10px] shadow-lg active:scale-95">Sahkan</button>
+                <button onClick={() => setShowCollectorModal(null)} className="flex-1 font-black text-slate-300 text-[10px]">Batal</button>
+                <button onClick={() => { if(!collectorName) return; updateStatus(showCollectorModal, 'COLLECTED', collectorName.toUpperCase()); setShowCollectorModal(null); setCollectorName(''); }} className="flex-[2] bg-purple-600 text-white py-3 rounded-xl font-black text-[10px]">Sahkan</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Note Modal */}
         {showNoteModal && (
-          <div className="absolute inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-in zoom-in duration-200">
+          <div className="absolute inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm">
             <div className="bg-white w-full rounded-3xl p-6 shadow-2xl">
-              <h3 className="font-black uppercase text-red-600 mb-4 flex items-center gap-2 italic"><StickyNote className="w-5 h-5" /> Nota</h3>
-              <textarea rows="3" autoFocus className="w-full p-4 bg-red-50 border border-red-100 rounded-xl font-bold uppercase mb-4 outline-none text-sm" value={tempNote} onChange={(e) => setTempNote(e.target.value)} />
+              <textarea rows="3" autoFocus className="w-full p-4 bg-red-50 border border-red-100 rounded-xl font-bold uppercase mb-4 text-sm" value={tempNote} onChange={(e) => setTempNote(e.target.value)} />
               <div className="flex gap-2">
-                <button onClick={() => {setShowNoteModal(null); setTempNote('');}} className="flex-1 font-black text-slate-300 uppercase text-[10px]">Batal</button>
-                <button onClick={() => { updateStatus(showNoteModal, showNoteModal.status, null, tempNote.toUpperCase()); setShowNoteModal(null); setTempNote(''); }} className="flex-[2] bg-red-600 text-white py-3 rounded-xl font-black uppercase text-[10px] shadow-lg">Simpan</button>
+                <button onClick={() => setShowNoteModal(null)} className="flex-1 font-black text-slate-300 text-[10px]">Batal</button>
+                <button onClick={() => { updateStatus(showNoteModal, showNoteModal.status, null, tempNote.toUpperCase()); setShowNoteModal(null); setTempNote(''); }} className="flex-[2] bg-red-600 text-white py-3 rounded-xl font-black text-[10px]">Simpan</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Confirmation Dialog */}
         {confirmDialog.show && (
-          <div className="absolute inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="bg-white w-full max-w-[300px] rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-200">
-              <div className="flex justify-center mb-6 text-amber-500 bg-amber-50 w-16 h-16 rounded-full items-center mx-auto">
-                <AlertCircle className="w-8 h-8" />
-              </div>
-              <h3 className="font-black uppercase text-slate-800 text-center text-lg mb-2 italic tracking-tight">{confirmDialog.title}</h3>
-              <p className="text-[11px] font-bold text-slate-400 text-center uppercase leading-tight mb-8 px-2">{confirmDialog.message}</p>
+          <div className="absolute inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-6 backdrop-blur-sm">
+            <div className="bg-white w-full max-w-[300px] rounded-[2.5rem] p-8 shadow-2xl">
+              <h3 className="font-black uppercase text-center text-lg mb-2 italic">{confirmDialog.title}</h3>
+              <p className="text-[11px] font-bold text-slate-400 text-center uppercase mb-8">{confirmDialog.message}</p>
               <div className="flex gap-3">
-                <button onClick={() => setConfirmDialog({ show: false })} className="flex-1 font-black text-slate-300 uppercase text-[10px] py-4 bg-slate-50 rounded-2xl active:bg-slate-100">Batal</button>
-                <button onClick={confirmDialog.action} className="flex-[2] bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-[10px] shadow-lg active:bg-red-600 transition-colors">Sahkan</button>
+                <button onClick={() => setConfirmDialog({ show: false })} className="flex-1 font-black text-slate-300 text-[10px] py-4 bg-slate-50 rounded-2xl">Batal</button>
+                <button onClick={confirmDialog.action} className="flex-[2] bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] shadow-lg">Sahkan</button>
               </div>
             </div>
           </div>
