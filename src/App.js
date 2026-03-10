@@ -1,3 +1,4 @@
+/* global __firebase_config, __app_id, __initial_auth_token */
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -38,24 +39,31 @@ import {
 
 /**
  * CONFIGURASI FIREBASE & GLOBAL
+ * Diperbaiki: Menyokong VITE_ dan REACT_APP_ untuk keserasian Vercel/CRA
  */
+const getEnv = (key) => {
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env[`VITE_${key}`] || process.env[`REACT_APP_${key}`] || "";
+  }
+  return "";
+};
+
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
   : {
-      apiKey: "",
-      authDomain: "",
-      projectId: "",
-      storageBucket: "",
-      messagingSenderId: "",
-      appId: ""
+      apiKey: getEnv("FIREBASE_API_KEY"),
+      authDomain: getEnv("FIREBASE_AUTH_DOMAIN"),
+      projectId: getEnv("FIREBASE_PROJECT_ID"),
+      storageBucket: getEnv("FIREBASE_STORAGE_BUCKET"),
+      messagingSenderId: getEnv("FIREBASE_MESSAGING_SENDER_ID"),
+      appId: getEnv("FIREBASE_APP_ID")
     };
 
-// Masukkan URL Google Apps Script anda di sini untuk audit Google Sheets
-const GOOGLE_SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxzVjV4GK_-pIH-SNxpjD9Zoeuweflj3V8utA3DLqUa2Ld-N3k1a_nmHbivcZwxaxMiA/exec"; 
+const GOOGLE_SHEET_WEBHOOK_URL = getEnv("SHEET_WEBHOOK_URL"); 
 
 const appId = typeof __app_id !== 'undefined' 
   ? __app_id 
-  : 'pharmacy-tracker-v2';
+  : (getEnv("APP_ID") || 'pharmacy-tracker-v2');
 
 // Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
@@ -91,14 +99,13 @@ const getUnitColor = (unitName) => {
 
 /**
  * FUNGSI PENYELARASAN GOOGLE SHEETS
- * Menghantar data ke webhook Google Apps Script secara senyap
  */
 const syncToGoogleSheets = async (payload) => {
   if (!GOOGLE_SHEET_WEBHOOK_URL) return;
   try {
     await fetch(GOOGLE_SHEET_WEBHOOK_URL, {
       method: 'POST',
-      mode: 'no-cors', // Penting untuk mengelakkan sekatan CORS Google
+      mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
@@ -225,7 +232,6 @@ export default function App() {
       const indentsRef = collection(db, 'artifacts', appId, 'public', 'data', 'indents');
       const docRef = await addDoc(indentsRef, newEntry);
       
-      // Sync ke Google Sheets
       syncToGoogleSheets({ action: 'NEW_INDENT', id: docRef.id, ...newEntry });
       
       setActiveTab('tracker');
@@ -247,7 +253,6 @@ export default function App() {
     try { 
       await updateDoc(docRef, updates); 
       
-      // Sync ke Google Sheets untuk audit trail
       syncToGoogleSheets({ 
         action: 'UPDATE_STATUS', 
         id: item.id, 
@@ -700,7 +705,7 @@ export default function App() {
               </div>
 
               <div className="flex gap-3">
-                <button onClick={() => setShowEditUnitModal(null)} className="flex-1 font-black text-slate-300 uppercase text-[10px] py-4 bg-slate-50 rounded-2xl">Batal</button>
+                <button onClick={() => {setShowEditUnitModal(null); setEditUnitName(''); setEditUnitCats('');}} className="flex-1 font-black text-slate-300 uppercase text-[10px] py-4 bg-slate-50 rounded-2xl">Batal</button>
                 <button onClick={handleEditUnitSave} className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-all">Simpan Perubahan</button>
               </div>
             </div>
@@ -730,7 +735,7 @@ export default function App() {
               <h3 className="font-black uppercase text-purple-600 mb-4 flex items-center gap-2 italic"><User className="w-5 h-5" /> Pengambil</h3>
               <input autoFocus className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl font-black uppercase mb-4 outline-none" placeholder="NAMA STAF PENGAMBIL" value={collectorName} onChange={(e) => setCollectorName(e.target.value)} />
               <div className="flex gap-2">
-                <button onClick={() => setShowCollectorModal(null)} className="flex-1 font-black text-slate-300 uppercase text-[10px]">Batal</button>
+                <button onClick={() => {setShowCollectorModal(null); setCollectorName('');}} className="flex-1 font-black text-slate-300 uppercase text-[10px]">Batal</button>
                 <button onClick={() => { if(!collectorName) return; updateStatus(showCollectorModal, 'COLLECTED', collectorName.toUpperCase()); setShowCollectorModal(null); setCollectorName(''); }} className="flex-[2] bg-purple-600 text-white py-3 rounded-xl font-black uppercase text-[10px] shadow-lg active:scale-95">Sahkan</button>
               </div>
             </div>
@@ -744,8 +749,8 @@ export default function App() {
               <h3 className="font-black uppercase text-red-600 mb-4 flex items-center gap-2 italic"><StickyNote className="w-5 h-5" /> Nota</h3>
               <textarea rows="3" autoFocus className="w-full p-4 bg-red-50 border border-red-100 rounded-xl font-bold uppercase mb-4 outline-none text-sm" value={tempNote} onChange={(e) => setTempNote(e.target.value)} />
               <div className="flex gap-2">
-                <button onClick={() => setShowNoteModal(null)} className="flex-1 font-black text-slate-300 uppercase text-[10px]">Batal</button>
-                <button onClick={() => { updateStatus(showNoteModal, showNoteModal.status, null, tempNote.toUpperCase()); setShowNoteModal(null); }} className="flex-[2] bg-red-600 text-white py-3 rounded-xl font-black uppercase text-[10px] shadow-lg">Simpan</button>
+                <button onClick={() => {setShowNoteModal(null); setTempNote('');}} className="flex-1 font-black text-slate-300 uppercase text-[10px]">Batal</button>
+                <button onClick={() => { updateStatus(showNoteModal, showNoteModal.status, null, tempNote.toUpperCase()); setShowNoteModal(null); setTempNote(''); }} className="flex-[2] bg-red-600 text-white py-3 rounded-xl font-black uppercase text-[10px] shadow-lg">Simpan</button>
               </div>
             </div>
           </div>
