@@ -1,7 +1,8 @@
 /* eslint-disable */
 /**
- * PELINDUNG KESELAMATAN (SAFETY GUARD)
- * Kod ini memastikan objek 'process' wujud dalam persekitaran pelayar untuk mengelakkan ralat ReferenceError.
+ * PELINDUNG KESELAMATAN (POLYFILL)
+ * Memastikan objek 'process' wujud supaya pelayar tidak 'crash' 
+ * jika sistem build gagal menggantikan nilai env.
  */
 if (typeof window !== 'undefined' && typeof process === 'undefined') {
   window.process = { env: {} };
@@ -46,48 +47,41 @@ import {
 } from 'lucide-react';
 
 /**
- * PENGURUSAN KONFIGURASI (ULTRA-SAFE)
- * CRA memerlukan akses literal process.env.REACT_APP_... untuk berfungsi.
- * Kami juga menambah fallback untuk window.__firebase_config bagi kegunaan simulasi.
+ * PENGURUSAN KONFIGURASI
+ * PENTING: CRA memerlukan akses literal 'process.env.REACT_APP_...' 
+ * supaya ia boleh ditukar kepada string semasa proses build.
  */
 const getFirebaseConfig = () => {
-  // 1. Semak pembolehubah simulasi terlebih dahulu (Canvas/Sandbox)
+  // 1. Check for simulation variables first (Canvas/Sandbox)
   if (typeof window !== 'undefined' && window.__firebase_config) {
     try {
       return typeof window.__firebase_config === 'string' 
         ? JSON.parse(window.__firebase_config) 
         : window.__firebase_config;
     } catch (e) {
-      console.error("Ralat memproses konfigurasi Firebase", e);
+      console.error("Firebase config parse error", e);
     }
   }
 
-  // 2. Akses statik untuk Create React App (CRA) / Vercel
-  // PENTING: Semak kewujudan 'process' secara eksplisit untuk mengelakkan ralat ReferenceError
-  const env = (typeof process !== 'undefined' && process.env) ? process.env : {};
-
+  // 2. Direct literal access for Create React App (CRA) / Vercel
+  // Jangan simpan process.env ke dalam variable lain, guna terus begini:
   return {
-    apiKey: env.REACT_APP_FIREBASE_API_KEY || "",
-    authDomain: env.REACT_APP_FIREBASE_AUTH_DOMAIN || "",
-    projectId: env.REACT_APP_FIREBASE_PROJECT_ID || "",
-    storageBucket: env.REACT_APP_FIREBASE_STORAGE_BUCKET || "",
-    messagingSenderId: env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "",
-    appId: env.REACT_APP_FIREBASE_APP_ID || ""
+    apiKey: (typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_API_KEY : "") || "",
+    authDomain: (typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_AUTH_DOMAIN : "") || "",
+    projectId: (typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_PROJECT_ID : "") || "",
+    storageBucket: (typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_STORAGE_BUCKET : "") || "",
+    messagingSenderId: (typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID : "") || "",
+    appId: (typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_APP_ID : "") || ""
   };
 };
 
 const firebaseConfig = getFirebaseConfig();
 
-// Akses selamat untuk webhook dan ID aplikasi
-const GOOGLE_SHEET_WEBHOOK_URL = (typeof process !== 'undefined' && process.env) 
-  ? (process.env.REACT_APP_SHEET_WEBHOOK_URL || "") 
-  : "";
-
+// Akses literal untuk webhook dan App ID
+const GOOGLE_SHEET_WEBHOOK_URL = (typeof process !== 'undefined' ? process.env.REACT_APP_SHEET_WEBHOOK_URL : "") || "";
 const appId = (typeof window !== 'undefined' && window.__app_id) 
   ? window.__app_id 
-  : ((typeof process !== 'undefined' && process.env && process.env.REACT_APP_APP_ID) 
-      ? process.env.REACT_APP_APP_ID 
-      : 'pharmacy-tracker-v2');
+  : ((typeof process !== 'undefined' ? process.env.REACT_APP_APP_ID : "") || 'pharmacy-tracker-v2');
 
 // Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
@@ -130,7 +124,7 @@ const syncToGoogleSheets = async (payload) => {
       body: JSON.stringify(payload)
     });
   } catch (err) {
-    console.warn("Audit log gagal (Penyelarasan Sheet):", err);
+    console.warn("Audit log gagal (Sheet sync):", err);
   }
 };
 
@@ -172,7 +166,7 @@ export default function App() {
           await signInAnonymously(auth);
         }
       } catch (err) {
-        console.error("Auth gagal", err);
+        console.error("Auth failed", err);
       }
     };
     initAuth();
@@ -189,7 +183,7 @@ export default function App() {
       setIndents(data);
       setLoading(false);
     }, (err) => {
-      console.error("Ralat penyelarasan Indents:", err);
+      console.error("Indents sync error:", err);
       setLoading(false);
     });
 
@@ -312,7 +306,6 @@ export default function App() {
     if (passwordInput === ADMIN_PASSWORD) {
       setActiveTab('settings');
       setShowPasswordModal(false);
-      setPasswordError(false);
     } else {
       setPasswordError(true);
     }
